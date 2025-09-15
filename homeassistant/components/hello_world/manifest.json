@@ -2,7 +2,7 @@
   "domain": "hello_world",
   "name": "hello_world",
   "codeowners": ["@Zoe"],
-  "config_flow": true,
+  "config_flow": false,
   "dependencies": [],
   "documentation": "https://www.home-assistant.io/integrations/hello_world",
   "homekit": {},
