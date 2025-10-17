@@ -46,3 +46,35 @@ async def test_smoke_test_setup_component(
     for cond in CONDITIONS:
         state = hass.states.get(f"sensor.buienradar_5_40021651_528850{cond}")
         assert state.state == "unknown"
+
+def test_icon_constants_usage_for_all_icons():
+    """Test that all defined icon constants are correctly used in sensor descriptions."""
+    from homeassistant.components.buienradar.const import (
+        ICON_GAUGE,
+        ICON_COMPASS_OUTLINE,
+        ICON_WEATHER_POURING,
+        ICON_WEATHER_PARTLY_CLOUDY,
+    )
+    from homeassistant.components.buienradar import sensor
+
+    icons_to_expected_counts = {
+        ICON_GAUGE: 4,
+        ICON_COMPASS_OUTLINE: 11,
+        ICON_WEATHER_POURING: 5,
+        ICON_WEATHER_PARTLY_CLOUDY: 5,
+    }
+
+    # 校验常量值正确
+    assert ICON_GAUGE == "mdi:gauge"
+    assert ICON_COMPASS_OUTLINE == "mdi:compass-outline"
+    assert ICON_WEATHER_POURING == "mdi:weather-pouring"
+    assert ICON_WEATHER_PARTLY_CLOUDY == "mdi:weather-partly-cloudy"
+
+    # 校验使用次数与内容正确
+    for icon_const, expected_count in icons_to_expected_counts.items():
+        used = [
+            desc for desc in sensor.SENSOR_TYPES if getattr(desc, "icon", None) == icon_const
+        ]
+        assert len(used) == expected_count, f"{icon_const} used {len(used)} times, expected {expected_count}"
+        assert all(desc.icon == icon_const for desc in used)
+
