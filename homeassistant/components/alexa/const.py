@@ -8,6 +8,10 @@ from homeassistant.const import UnitOfTemperature
 DOMAIN = "alexa"
 EVENT_ALEXA_SMART_HOME = "alexa_smart_home"
 
+# Namespace constants
+NAMESPACE_THERMOSTAT_CONTROLLER = "Alexa.ThermostatController"
+NAMESPACE_SECURITY_PANEL_CONTROLLER = "Alexa.SecurityPanelController"
+
 # Flash briefing constants
 CONF_UID = "uid"
 CONF_TITLE = "title"
