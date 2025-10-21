@@ -321,14 +321,12 @@ class AuthStore:
         ent_reg = er.async_get(self.hass)
         data = await self._store.async_load()
 
-        perm_lookup = PermissionLookup(ent_reg, dev_reg)
-        self._perm_lookup = perm_lookup
+        self._perm_lookup = PermissionLookup(ent_reg, dev_reg)
 
         if data is None or not isinstance(data, dict):
             self._set_defaults()
             return
 
-        users: dict[str, models.User] = {}
         groups, group_flags, group_without_policy = self._load_groups(data)
         credentials: dict[str, models.Credentials] = {}
 
@@ -357,30 +355,8 @@ class AuthStore:
             user_group = _system_user_group()
             groups[user_group.id] = user_group
 
-        for user_dict in data["users"]:
-            # Collect the users group.
-            user_groups = []
-            for group_id in user_dict.get("group_ids", []):
-                # This is part of migrating from state 1
-                if group_id == group_without_policy:
-                    group_id = GROUP_ID_ADMIN
-                user_groups.append(groups[group_id])
 
-            # This is part of migrating from state 2
-            if not user_dict["system_generated"] and migrate_users_to_admin_group:
-                user_groups.append(groups[GROUP_ID_ADMIN])
-
-            users[user_dict["id"]] = models.User(
-                name=user_dict["name"],
-                groups=user_groups,
-                id=user_dict["id"],
-                is_owner=user_dict["is_owner"],
-                is_active=user_dict["is_active"],
-                system_generated=user_dict["system_generated"],
-                perm_lookup=perm_lookup,
-                # New in 2021.11
-                local_only=user_dict.get("local_only", False),
-            )
+        users: dict[str, models.User] = self._load_users(data, groups, group_without_policy, migrate_users_to_admin_group)
 
         for cred_dict in data["credentials"]:
             credential = models.Credentials(
@@ -497,7 +473,6 @@ class AuthStore:
 
       return groups, group_flags, group_without_policy
 
-
     def _get_group_configs(self) -> dict[str, dict]:
       """Return static system group definitions."""
       return {
@@ -517,6 +492,37 @@ class AuthStore:
               "policy": system_policies.READ_ONLY_POLICY,
           },
       }
+    
+    @callback
+    def _load_users(self, data: dict[str, list[dict[str, Any]]], groups, group_without_policy, migrate_users_to_admin_group) -> None:
+        users: dict[str, models.User] = {}
+
+        for user_dict in data["users"]:
+          # Collect the users group.
+          user_groups = []
+          for group_id in user_dict.get("group_ids", []):
+              # This is part of migrating from state 1
+              if group_id == group_without_policy:
+                  group_id = GROUP_ID_ADMIN
+              user_groups.append(groups[group_id])
+
+          # This is part of migrating from state 2
+          if not user_dict["system_generated"] and migrate_users_to_admin_group:
+              user_groups.append(groups[GROUP_ID_ADMIN])
+
+          users[user_dict["id"]] = models.User(
+              name=user_dict["name"],
+              groups=user_groups,
+              id=user_dict["id"],
+              is_owner=user_dict["is_owner"],
+              is_active=user_dict["is_active"],
+              system_generated=user_dict["system_generated"],
+              perm_lookup=self._perm_lookup,
+              # New in 2021.11
+              local_only=user_dict.get("local_only", False),
+          )
+
+        return users
     
     @callback
     def _build_token_id_to_user_id(self) -> None:
