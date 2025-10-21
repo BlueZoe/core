@@ -327,35 +327,8 @@ class AuthStore:
             self._set_defaults()
             return
 
-        groups, group_flags, group_without_policy = self._load_groups(data)
+        groups, group_without_policy, migrate_users_to_admin_group = self._load_groups(data)
         credentials: dict[str, models.Credentials] = {}
-
-        # Soft-migrating data as we load. We are going to make sure we have a
-        # read only group and an admin group. There are two states that we can
-        # migrate from:
-        # 1. Data from a recent version which has a single group without policy
-        # 2. Data from old version which has no groups
-
-        # If there are no groups, add all existing users to the admin group.
-        # This is part of migrating from state 2
-        migrate_users_to_admin_group = not groups and group_without_policy is None
-
-
-        # This is part of migrating from state 1 and 2
-        if not group_flags["has_admin_group"]:
-            admin_group = _system_admin_group()
-            groups[admin_group.id] = admin_group
-
-        # This is part of migrating from state 1 and 2
-        if not group_flags["has_read_only_group"]:
-            read_only_group = _system_read_only_group()
-            groups[read_only_group.id] = read_only_group
-
-        if not group_flags["has_user_group"]:
-            user_group = _system_user_group()
-            groups[user_group.id] = user_group
-
-
         users: dict[str, models.User] = self._load_users(data, groups, group_without_policy, migrate_users_to_admin_group)
 
         for cred_dict in data["credentials"]:
@@ -425,6 +398,12 @@ class AuthStore:
         self._build_token_id_to_user_id()
         self._async_schedule_save(INITIAL_LOAD_SAVE_DELAY)
 
+    
+    # Soft-migrating data as we load. We are going to make sure we have a
+    # read only group and an admin group. There are two states that we can
+    # migrate from:
+    # 1. Data from a recent version which has a single group without policy
+    # 2. Data from old version which has no groups
     @callback
     def _load_groups(self, data: dict[str, list[dict[str, Any]]]) -> dict[str, models.Group]:
       """Load or migrate groups."""
@@ -471,7 +450,26 @@ class AuthStore:
       if groups and group_without_policy is not None:
           group_without_policy = None
 
-      return groups, group_flags, group_without_policy
+      # If there are no groups, add all existing users to the admin group.
+      # This is part of migrating from state 2
+      migrate_users_to_admin_group = not groups and group_without_policy is None
+
+
+      # This is part of migrating from state 1 and 2
+      if not group_flags["has_admin_group"]:
+          admin_group = _system_admin_group()
+          groups[admin_group.id] = admin_group
+
+      # This is part of migrating from state 1 and 2
+      if not group_flags["has_read_only_group"]:
+          read_only_group = _system_read_only_group()
+          groups[read_only_group.id] = read_only_group
+
+      if not group_flags["has_user_group"]:
+          user_group = _system_user_group()
+          groups[user_group.id] = user_group
+
+      return groups, group_without_policy, migrate_users_to_admin_group
 
     def _get_group_configs(self) -> dict[str, dict]:
       """Return static system group definitions."""
