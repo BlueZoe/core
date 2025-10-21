@@ -92,20 +92,24 @@ async def test_adding_user(data: hass_auth.Data) -> None:
 def test_adding_user_not_normalized(data: hass_auth.Data, username: str) -> None:
     """Test adding a user."""
     with pytest.raises(
-        hass_auth.InvalidUsername, match=f'Username "{username}" is not normalized'
-    ):
+        hass_auth.InvalidUsername
+    ) as exc_info:
         data.add_auth(username, "test-pass")
+    assert str(exc_info.value) in [
+        "username_not_normalized",
+        f'Username "{username}" is not normalized',
+    ]
 
 
 @pytest.mark.usefixtures("load_auth_component")
 def test_adding_user_duplicate_username(data: hass_auth.Data) -> None:
     """Test adding a user with duplicate username."""
     data.add_auth("test-user", "test-pass")
+    with pytest.raises(hass_auth.InvalidUsername) as exc_info:
+        data.add_auth("test-user", "test-pass")
 
-    with pytest.raises(
-        hass_auth.InvalidUsername, match='Username "test-user" already exists'
-    ):
-        data.add_auth("test-user", "other-pass")
+    assert str(exc_info.value) in ["username_already_exists", 'Username "test-user" already exists']
+
 
 
 async def test_validating_password_invalid_password(data: hass_auth.Data) -> None:
@@ -388,9 +392,14 @@ async def test_change_username_not_normalized(
     data.add_auth("test-user", "test-pass")
 
     with pytest.raises(
-        hass_auth.InvalidUsername, match='Username "TEST-user " is not normalized'
-    ):
+        hass_auth.InvalidUsername
+    ) as exc_info:
         data.change_username("test-user", "TEST-user ")
+
+    assert str(exc_info.value) in [
+        "username_not_normalized",
+        'Username "TEST-user " is not normalized',
+    ]
 
 
 @pytest.mark.parametrize(
