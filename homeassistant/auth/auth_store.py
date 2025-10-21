@@ -429,7 +429,7 @@ class AuthStore:
       }
     
     @callback
-    def _load_users(self, data: dict[str, list[dict[str, Any]]], groups, group_without_policy, migrate_users_to_admin_group) -> None:
+    def _load_users(self, data: dict[str, list[dict[str, Any]]], groups, group_without_policy, migrate_users_to_admin_group) -> dict[str, models.User]:
         users: dict[str, models.User] = {}
 
         for user_dict in data["users"]:
