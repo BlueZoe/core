@@ -64,3 +64,9 @@ STATE_CONDITION_CODES = [
     "g",
     "s",
 ]
+
+ICON_WEATHER_WINDY = "mdi:weather-windy"
+ICON_GAUGE = "mdi:gauge"
+ICON_COMPASS_OUTLINE = "mdi:compass-outline"
+ICON_WEATHER_POURING = "mdi:weather-pouring"
+ICON_WEATHER_PARTLY_CLOUDY = "mdi:weather-partly-cloudy"
