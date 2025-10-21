@@ -329,7 +329,7 @@ class AuthStore:
             return
 
         users: dict[str, models.User] = {}
-        groups: dict[str, models.Group] = {}
+        groups, group_flags, group_without_policy = self._load_groups(data)
         credentials: dict[str, models.Credentials] = {}
 
         # Soft-migrating data as we load. We are going to make sure we have a
@@ -337,79 +337,23 @@ class AuthStore:
         # migrate from:
         # 1. Data from a recent version which has a single group without policy
         # 2. Data from old version which has no groups
-        has_admin_group = False
-        has_user_group = False
-        has_read_only_group = False
-        group_without_policy = None
-
-        # When creating objects we mention each attribute explicitly. This
-        # prevents crashing if user rolls back HA version after a new property
-        # was added.
-
-        for group_dict in data.get("groups", []):
-            policy: PolicyType | None = None
-
-            if group_dict["id"] == GROUP_ID_ADMIN:
-                has_admin_group = True
-
-                name = GROUP_NAME_ADMIN
-                policy = system_policies.ADMIN_POLICY
-                system_generated = True
-
-            elif group_dict["id"] == GROUP_ID_USER:
-                has_user_group = True
-
-                name = GROUP_NAME_USER
-                policy = system_policies.USER_POLICY
-                system_generated = True
-
-            elif group_dict["id"] == GROUP_ID_READ_ONLY:
-                has_read_only_group = True
-
-                name = GROUP_NAME_READ_ONLY
-                policy = system_policies.READ_ONLY_POLICY
-                system_generated = True
-
-            else:
-                name = group_dict["name"]
-                policy = group_dict.get("policy")
-                system_generated = False
-
-            # We don't want groups without a policy that are not system groups
-            # This is part of migrating from state 1
-            if policy is None:
-                group_without_policy = group_dict["id"]
-                continue
-
-            groups[group_dict["id"]] = models.Group(
-                id=group_dict["id"],
-                name=name,
-                policy=policy,
-                system_generated=system_generated,
-            )
 
         # If there are no groups, add all existing users to the admin group.
         # This is part of migrating from state 2
         migrate_users_to_admin_group = not groups and group_without_policy is None
 
-        # If we find a no_policy_group, we need to migrate all users to the
-        # admin group. We only do this if there are no other groups, as is
-        # the expected state. If not expected state, not marking people admin.
-        # This is part of migrating from state 1
-        if groups and group_without_policy is not None:
-            group_without_policy = None
 
         # This is part of migrating from state 1 and 2
-        if not has_admin_group:
+        if not group_flags["has_admin_group"]:
             admin_group = _system_admin_group()
             groups[admin_group.id] = admin_group
 
         # This is part of migrating from state 1 and 2
-        if not has_read_only_group:
+        if not group_flags["has_read_only_group"]:
             read_only_group = _system_read_only_group()
             groups[read_only_group.id] = read_only_group
 
-        if not has_user_group:
+        if not group_flags["has_user_group"]:
             user_group = _system_user_group()
             groups[user_group.id] = user_group
 
@@ -505,6 +449,75 @@ class AuthStore:
         self._build_token_id_to_user_id()
         self._async_schedule_save(INITIAL_LOAD_SAVE_DELAY)
 
+    @callback
+    def _load_groups(self, data: dict[str, list[dict[str, Any]]]) -> dict[str, models.Group]:
+      """Load or migrate groups."""
+      groups: dict[str, models.Group] = {}
+      group_without_policy = None
+      group_configs = self._get_group_configs()
+      group_flags = {v["flag"]: False for v in group_configs.values()}
+
+      # When creating objects we mention each attribute explicitly. This
+      # prevents crashing if user rolls back HA version after a new property
+      # was added.
+      for group_dict in data.get("groups", []):
+        policy: PolicyType | None = None
+
+        config = group_configs.get(group_dict["id"])
+
+        if config:
+            group_flags[config["flag"]] = True
+            name = config["name"]
+            policy = config["policy"]
+            system_generated = True
+        else:
+            name = group_dict["name"]
+            policy = group_dict.get("policy")
+            system_generated = False
+
+        # We don't want groups without a policy that are not system groups
+        # This is part of migrating from state 1
+        if policy is None:
+            group_without_policy = group_dict["id"]
+            continue
+
+        groups[group_dict["id"]] = models.Group(
+            id=group_dict["id"],
+            name=name,
+            policy=policy,
+            system_generated=system_generated,
+        )
+
+      # If we find a no_policy_group, we need to migrate all users to the
+      # admin group. We only do this if there are no other groups, as is
+      # the expected state. If not expected state, not marking people admin.
+      # This is part of migrating from state 1
+      if groups and group_without_policy is not None:
+          group_without_policy = None
+
+      return groups, group_flags, group_without_policy
+
+
+    def _get_group_configs(self) -> dict[str, dict]:
+      """Return static system group definitions."""
+      return {
+          GROUP_ID_ADMIN: {
+              "flag": "has_admin_group",
+              "name": GROUP_NAME_ADMIN,
+              "policy": system_policies.ADMIN_POLICY,
+          },
+          GROUP_ID_USER: {
+              "flag": "has_user_group",
+              "name": GROUP_NAME_USER,
+              "policy": system_policies.USER_POLICY,
+          },
+          GROUP_ID_READ_ONLY: {
+              "flag": "has_read_only_group",
+              "name": GROUP_NAME_READ_ONLY,
+              "policy": system_policies.READ_ONLY_POLICY,
+          },
+      }
+    
     @callback
     def _build_token_id_to_user_id(self) -> None:
         """Build a map of token id to user id."""
