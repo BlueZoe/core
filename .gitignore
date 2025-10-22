@@ -138,7 +138,7 @@ tmp_cache
 # Will be created from script/split_tests.py
 pytest_buckets.txt
 
-.claude/*
+.claude/
 
 # SonarQube
 .sonarqube/
@@ -147,4 +147,7 @@ pytest_buckets.txt
 sonar-project.properties
 run_sonarqube*.sh
 SONARQUBE*.md
-
+analyze_sonarqube_results.py
+export_sonarqube_results.sh
+sonarqube_results/
+sonarqube_results/
