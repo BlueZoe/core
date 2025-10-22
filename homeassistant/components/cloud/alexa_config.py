@@ -353,7 +353,7 @@ class CloudAlexaConfig(alexa_config.AbstractConfig):
         """Handle updated preferences."""
         if not self._cloud.is_logged_in:
             if self.is_reporting_states:
-                await self.async_disable_proactive_mode()
+                self.async_disable_proactive_mode()
 
             if self._alexa_sync_unsub:
                 self._alexa_sync_unsub()
@@ -376,7 +376,7 @@ class CloudAlexaConfig(alexa_config.AbstractConfig):
                 except (alexa_errors.NoTokenAvailable, alexa_errors.RequireRelink):
                     await self.set_authorized(False)
             else:
-                await self.async_disable_proactive_mode()
+                self.async_disable_proactive_mode()
 
             # State reporting is reported as a property on entities.
             # So when we change it, we need to sync all entities.

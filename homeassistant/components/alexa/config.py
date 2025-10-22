@@ -90,7 +90,8 @@ class AbstractConfig(ABC):
                 self.hass, self
             )
 
-    async def async_disable_proactive_mode(self) -> None:
+    @callback
+    def async_disable_proactive_mode(self) -> None:
         """Disable proactive mode."""
         _LOGGER.debug("Disable proactive mode")
         if unsub_func := self._unsub_proactive_report:
@@ -140,7 +141,7 @@ class AbstractConfig(ABC):
                     self._store.set_authorized(False)
                     raise
             else:
-                await self.async_disable_proactive_mode()
+                self.async_disable_proactive_mode()
 
 
 class AlexaConfigStore:
