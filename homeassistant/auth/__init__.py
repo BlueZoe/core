@@ -93,7 +93,7 @@ async def auth_manager_from_config(
         module_hash[module.id] = module
 
     manager = AuthManager(hass, store, provider_hash, module_hash)
-    await manager.async_setup()
+    manager.async_setup()
     return manager
 
 
@@ -193,7 +193,7 @@ class AuthManager:
             self._async_remove_expired_refresh_tokens, job_type=HassJobType.Callback
         )
 
-    async def async_setup(self) -> None:
+    def async_setup(self) -> None:
         """Set up the auth manager."""
         hass = self.hass
         hass.async_add_shutdown_job(

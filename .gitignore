@@ -141,3 +141,11 @@ pytest_buckets.txt
 # AI tooling
 .claude/settings.local.json
 
+# SonarQube
+.sonarqube/
+.scannerwork/
+.sonar/
+sonar-project.properties
+run_sonarqube*.sh
+SONARQUBE*.md
+
