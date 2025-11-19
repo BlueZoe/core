@@ -1,4 +1,4 @@
-"""Support for global Spotify media searching."""
+"""Support for global Spotify media search functions."""
 
 from __future__ import annotations
 
