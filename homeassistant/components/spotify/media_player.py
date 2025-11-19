@@ -29,6 +29,8 @@ from homeassistant.components.media_player import (
     MediaPlayerState,
     MediaType,
     RepeatMode,
+    SearchMedia,
+    SearchMediaQuery,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -38,6 +40,9 @@ from .browse_media import async_browse_media_internal
 from .const import MEDIA_PLAYER_PREFIX, PLAYABLE_MEDIA_TYPES
 from .coordinator import SpotifyConfigEntry, SpotifyCoordinator
 from .entity import SpotifyEntity
+from .search_media import async_search_media_internal
+
+# from .local_search_media import async_local_search_media_internal
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,6 +54,7 @@ SUPPORT_SPOTIFY = (
     | MediaPlayerEntityFeature.PLAY_MEDIA
     | MediaPlayerEntityFeature.PREVIOUS_TRACK
     | MediaPlayerEntityFeature.REPEAT_SET
+    | MediaPlayerEntityFeature.SEARCH_MEDIA
     | MediaPlayerEntityFeature.SEEK
     | MediaPlayerEntityFeature.SELECT_SOURCE
     | MediaPlayerEntityFeature.SHUFFLE_SET
@@ -134,7 +140,8 @@ class SpotifyMediaPlayer(SpotifyEntity, MediaPlayerEntity):
     def supported_features(self) -> MediaPlayerEntityFeature:
         """Return the supported features."""
         if self.coordinator.current_user.product != ProductType.PREMIUM:
-            return MediaPlayerEntityFeature(0)
+            # return MediaPlayerEntityFeature(0)
+            return SUPPORT_SPOTIFY
         if not self.currently_playing or self.currently_playing.device.is_restricted:
             return MediaPlayerEntityFeature.SELECT_SOURCE
         return SUPPORT_SPOTIFY
@@ -391,6 +398,17 @@ class SpotifyMediaPlayer(SpotifyEntity, MediaPlayerEntity):
             media_content_type,
             media_content_id,
         )
+
+    async def async_search_media(self, query: SearchMediaQuery) -> SearchMedia:
+        """Search media."""
+
+        result = await async_search_media_internal(
+            self.hass,
+            self.coordinator.client,
+            query,
+        )
+        _LOGGER.warning("Spotify raw search response: %r", result)
+        return SearchMedia(result=result)
 
     @callback
     def _handle_devices_update(self) -> None:
