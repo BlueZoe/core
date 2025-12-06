@@ -53,6 +53,7 @@ SUPPORT_SPOTIFY = (
     | MediaPlayerEntityFeature.SELECT_SOURCE
     | MediaPlayerEntityFeature.SHUFFLE_SET
     | MediaPlayerEntityFeature.VOLUME_SET
+    | MediaPlayerEntityFeature.SEARCH_MEDIA
 )
 
 REPEAT_MODE_MAPPING_TO_HA = {
