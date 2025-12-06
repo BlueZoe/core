@@ -5,6 +5,7 @@ from __future__ import annotations
 from enum import StrEnum
 import logging
 from typing import TYPE_CHECKING, Any, TypedDict
+from urllib.parse import parse_qs
 
 from spotifyaio import (
     Artist,
@@ -174,6 +175,10 @@ CONTENT_TYPE_MEDIA_CLASS: dict[str, Any] = {
         "parent": MediaClass.PLAYLIST,
         "children": MediaClass.TRACK,
     },
+    BrowsableMedia.SEARCH.value: {
+        "parent": MediaClass.SEARCH,
+        "children": MediaClass.SEARCH,
+    },
     MediaType.ALBUM: {"parent": MediaClass.ALBUM, "children": MediaClass.TRACK},
     MediaType.ARTIST: {"parent": MediaClass.ARTIST, "children": MediaClass.ALBUM},
     MediaType.EPISODE: {"parent": MediaClass.EPISODE, "children": None},
@@ -249,7 +254,7 @@ async def async_browse_media(
     ):
         raise BrowseError("Invalid Spotify account specified")
     media_content_id = parsed_url.name
-    query_params = parsed_url.query
+    query_params = dict(parsed_url.query)
     info = entry.runtime_data
 
     result = await async_browse_media_internal(
@@ -276,22 +281,11 @@ async def async_browse_media_internal(
     media_content_id: str | None,
     *,
     can_play_artist: bool = True,
-    query_params: Any = None,
+    query_params: dict[str, Any] | None = None,
 ) -> BrowseMedia:
     """Browse spotify media."""
     if media_content_type in (None, f"{MEDIA_PLAYER_PREFIX}library"):
         return await library_payload(can_play_artist=can_play_artist)
-
-    # if media_content_type == "search":
-    #     return BrowseMedia(
-    #         title="Search",
-    #         media_class=MediaClass.DIRECTORY,
-    #         media_content_id="search",
-    #         media_content_type=f"{MEDIA_PLAYER_PREFIX}search",
-    #         can_play=False,
-    #         can_expand=True,
-    #         children=[],
-    #     )
 
     # Strip prefix
     if media_content_type:
@@ -314,14 +308,18 @@ async def async_browse_media_internal(
 
 async def build_item_response(  # noqa: C901
     spotify: SpotifyClient,
-    payload: dict[str, str | None],
+    payload: dict[str, Any],
     *,
     can_play_artist: bool,
 ) -> BrowseMedia | None:
     """Create response payload for the provided media query."""
     media_content_type = payload["media_content_type"]
     media_content_id = payload["media_content_id"]
-    query_params = payload.get("query_params") or {}
+    query_params = payload.get("query_params")
+    if query_params is None:
+        query_params = {}
+    elif not isinstance(query_params, dict):
+        query_params = {}
 
     if media_content_type is None or media_content_id is None:
         return None
@@ -375,29 +373,34 @@ async def build_item_response(  # noqa: C901
         if new_releases := await spotify.get_new_releases():
             items = [_get_album_item_payload(album) for album in new_releases]
     elif media_content_type == BrowsableMedia.SEARCH:
-        # FIXME: 无法访问类“str”的属性“get”, q always None
+        if not query_params and "?" in media_content_id:
+            try:
+                _base, _query_str = media_content_id.split("?", 1)
+                parsed = parse_qs(_query_str)
+                for k, v in parsed.items():
+                    if v:
+                        query_params[k] = v[0]
+                media_content_id = _base
+            except Exception as err:
+                _LOGGER.warning("Failed to parse query params from ID: %s", err)
+
         q = query_params.get("q")
         search_type = query_params.get("type", "track")
-        print("搜索关键词:", q)
-        print("搜索类型:", search_type)
 
         if q:
-            # 调用 Spotify API (假设 spotifyaio 客户端支持 search 方法)
-            # search_type 映射: 'track', 'album', 'artist'
             results = await spotify.search(q, [search_type], limit=BROWSE_LIMIT)
-            print("搜索结果:", results)
             if search_type == "track" and results.tracks:
                 items = [
-                    _get_track_item_payload(track) for track in results.tracks.items
+                    _get_track_item_payload(track, False) for track in results.tracks
                 ]
             elif search_type == "album" and results.albums:
+                items = [_get_album_item_payload(album) for album in results.albums]
+            elif search_type == "playlist" and results.playlists:
                 items = [
-                    _get_album_item_payload(album) for album in results.albums.items
+                    _get_playlist_item_payload(playlist)
+                    for playlist in results.playlists
                 ]
-            elif search_type == "artist" and results.artists:
-                items = [
-                    _get_artist_item_payload(artist) for artist in results.artists.items
-                ]
+
     elif media_content_type == MediaType.PLAYLIST:
         if playlist := await spotify.get_playlist(media_content_id):
             title = playlist.name
@@ -523,18 +526,6 @@ async def library_payload(*, can_play_artist: bool) -> BrowseMedia:
     )
 
     browse_media.children = []
-
-    browse_media.children.append(
-        BrowseMedia(
-            can_expand=True,
-            can_play=False,
-            children_media_class=MediaClass.DIRECTORY,
-            media_class=MediaClass.DIRECTORY,
-            media_content_id="search",
-            media_content_type=f"{MEDIA_PLAYER_PREFIX}search",
-            title="Search",
-        )
-    )
 
     for item_type, item_name in LIBRARY_MAP.items():
         browse_media.children.append(
