@@ -113,6 +113,7 @@ class BrowsableMedia(StrEnum):
     CURRENT_USER_TOP_ARTISTS = "current_user_top_artists"
     CURRENT_USER_TOP_TRACKS = "current_user_top_tracks"
     NEW_RELEASES = "new_releases"
+    SEARCH_FUNCTIONS = "search_functions"
 
 
 LIBRARY_MAP = {
@@ -125,6 +126,7 @@ LIBRARY_MAP = {
     BrowsableMedia.CURRENT_USER_TOP_ARTISTS.value: "Top Artists",
     BrowsableMedia.CURRENT_USER_TOP_TRACKS.value: "Top Tracks",
     BrowsableMedia.NEW_RELEASES.value: "New Releases",
+    BrowsableMedia.SEARCH_FUNCTIONS.value: "Search",
 }
 
 CONTENT_TYPE_MEDIA_CLASS: dict[str, Any] = {
@@ -166,6 +168,11 @@ CONTENT_TYPE_MEDIA_CLASS: dict[str, Any] = {
     },
     MediaType.PLAYLIST: {
         "parent": MediaClass.PLAYLIST,
+        "children": MediaClass.TRACK,
+    },
+    # TDA266 TODO: This should be a search function, not a track list
+    BrowsableMedia.SEARCH_FUNCTIONS.value: {
+        "parent": MediaClass.SEARCH_FUNCTION,
         "children": MediaClass.TRACK,
     },
     MediaType.ALBUM: {"parent": MediaClass.ALBUM, "children": MediaClass.TRACK},
@@ -401,11 +408,14 @@ async def build_item_response(  # noqa: C901
         media_content_type != MediaType.ARTIST or can_play_artist
     )
 
+    can_search = media_content_type == BrowsableMedia.SEARCH_FUNCTIONS
+
     if TYPE_CHECKING:
         assert title
     browse_media = BrowseMedia(
         can_expand=True,
         can_play=can_play,
+        can_search=can_search,
         children_media_class=media_class["children"],
         media_class=media_class["parent"],
         media_content_id=media_content_id,
@@ -449,9 +459,12 @@ def item_payload(item: ItemPayload, *, can_play_artist: bool) -> BrowseMedia:
         media_type != MediaType.ARTIST or can_play_artist
     )
 
+    can_search = media_type == BrowsableMedia.SEARCH_FUNCTIONS
+
     return BrowseMedia(
         can_expand=can_expand,
         can_play=can_play,
+        can_search=can_search,
         children_media_class=media_class["children"],
         media_class=media_class["parent"],
         media_content_id=media_id,
