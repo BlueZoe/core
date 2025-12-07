@@ -95,7 +95,7 @@ class MediaClass(StrEnum):
     TV_SHOW = "tv_show"
     URL = "url"
     VIDEO = "video"
-    SEARCH_FUNCTION = "search_function"
+    SEARCH = "search"
 
 
 class MediaType(StrEnum):
