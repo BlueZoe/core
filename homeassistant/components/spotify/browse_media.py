@@ -28,6 +28,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN, MEDIA_PLAYER_PREFIX, MEDIA_TYPE_SHOW, PLAYABLE_MEDIA_TYPES
+from .track_search import search_tracks_with_images
 from .util import fetch_image_url
 
 BROWSE_LIMIT = 48
@@ -316,9 +317,7 @@ async def build_item_response(  # noqa: C901
     media_content_type = payload["media_content_type"]
     media_content_id = payload["media_content_id"]
     query_params = payload.get("query_params")
-    if query_params is None:
-        query_params = {}
-    elif not isinstance(query_params, dict):
+    if query_params is None or not isinstance(query_params, dict):
         query_params = {}
 
     if media_content_type is None or media_content_id is None:
@@ -381,25 +380,27 @@ async def build_item_response(  # noqa: C901
                     if v:
                         query_params[k] = v[0]
                 media_content_id = _base
-            except Exception as err:
+            except (ValueError, IndexError) as err:
                 _LOGGER.warning("Failed to parse query params from ID: %s", err)
 
         q = query_params.get("q")
         search_type = query_params.get("type", "track")
 
         if q:
-            results = await spotify.search(q, [search_type], limit=BROWSE_LIMIT)
-            if search_type == "track" and results.tracks:
-                items = [
-                    _get_track_item_payload(track, False) for track in results.tracks
-                ]
-            elif search_type == "album" and results.albums:
-                items = [_get_album_item_payload(album) for album in results.albums]
-            elif search_type == "playlist" and results.playlists:
-                items = [
-                    _get_playlist_item_payload(playlist)
-                    for playlist in results.playlists
-                ]
+            if search_type == "track":
+                # Use single API call search that includes album images
+                # Returns ItemPayload objects directly, no conversion needed
+                items = await search_tracks_with_images(spotify, q, limit=BROWSE_LIMIT)
+            else:
+                # For other types, use spotifyaio search
+                results = await spotify.search(q, [search_type], limit=BROWSE_LIMIT)
+                if search_type == "album" and results.albums:
+                    items = [_get_album_item_payload(album) for album in results.albums]
+                elif search_type == "playlist" and results.playlists:
+                    items = [
+                        _get_playlist_item_payload(playlist)
+                        for playlist in results.playlists
+                    ]
 
     elif media_content_type == MediaType.PLAYLIST:
         if playlist := await spotify.get_playlist(media_content_id):

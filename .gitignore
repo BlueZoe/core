@@ -143,3 +143,20 @@ pytest_buckets.txt
 .claude/settings.local.json
 .serena/
 
+analyze_sonarqube_results.py
+export_sonarqube_results.sh
+run_sonarqube_focused.sh
+run_sonarqube.sh
+pyrightconfig.json
+sonar-project.properties
+SONARQUBE_FOCUSED_ANALYSIS.md
+SONARQUBE_SETUP.md
+.scannerwork/.sonar_lock
+.scannerwork/report-task.txt
+homeassistant/components/spotify/client_credentials.json
+homeassistant/components/spotify/spotify_token.json
+sonarqube_results/FOCUSED_ANALYSIS_20251022_154040.md
+sonarqube_results/focused_issues_20251022_154040.json
+tests/components/spotify/test_track_search.py
+homeassistant/components/spotify/search_demo.py
+.devcontainer/devcontainer.json
