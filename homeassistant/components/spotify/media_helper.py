@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import Any
 
 import aiohttp
 from spotifyaio import SpotifyClient
@@ -21,60 +21,59 @@ from homeassistant.components.media_player import (
 )
 
 from .const import MEDIA_PLAYER_PREFIX
+from .models import ItemPayload
 from .util import spotify_uri_from_media_browser_url
-
-if TYPE_CHECKING:
-    from .browse_media import ItemPayload
-else:
-    # Define ItemPayload locally to match browse_media.ItemPayload structure
-    class ItemPayload(TypedDict, total=False):
-        """TypedDict for item payload."""
-
-        name: str
-        type: str
-        uri: str
-        id: str | None
-        thumbnail: str | None
-        is_liked: bool  # Optional field indicating if track is in user's liked songs
-
 
 _LOGGER = logging.getLogger(__name__)
 
 
-async def check_tracks_liked(
-    spotify: SpotifyClient, track_ids: list[str]
-) -> dict[str, bool]:
-    """Check which tracks are in user's liked songs.
-
-    Uses spotifyaio's are_tracks_saved() which calls /v1/me/tracks/contains.
-    Processes tracks in batches of 50 (Spotify API limit).
+async def enrich_tracks_liked(
+    spotify: SpotifyClient, items: list[ItemPayload]
+) -> list[ItemPayload]:
+    """Enrich a list of track ItemPayload objects with liked status.
 
     Args:
         spotify: Authenticated SpotifyClient
-        track_ids: List of track IDs (without "spotify:track:" prefix)
+        items: List of ItemPayload objects (must have "id" field for tracks)
 
     Returns:
-        Dictionary mapping track_id to boolean (True if liked, False otherwise)
+        List of ItemPayload objects with is_saved field populated for tracks
     """
-    if not track_ids:
-        return {}
+    if not items:
+        return items
 
+    # Collect track IDs from items
+    track_ids_to_check = [
+        track_id
+        for item in items
+        if item.get("type") == MediaType.TRACK and (track_id := item.get("id"))
+    ]
+
+    if not track_ids_to_check:
+        return items
+
+    # Batch check which tracks are liked (Spotify API limit: 50 per request)
     MAX_IDS_PER_REQUEST = 50
-    result: dict[str, bool] = {}
+    liked_status: dict[str, bool] = {}
 
-    # Process in batches due to API limit
-    for i in range(0, len(track_ids), MAX_IDS_PER_REQUEST):
-        batch = track_ids[i : i + MAX_IDS_PER_REQUEST]
+    for i in range(0, len(track_ids_to_check), MAX_IDS_PER_REQUEST):
+        batch = track_ids_to_check[i : i + MAX_IDS_PER_REQUEST]
         try:
             batch_result = await spotify.are_tracks_saved(batch)
-            result.update(batch_result)
+            liked_status.update(batch_result)
         except (SpotifyConnectionError, AttributeError, KeyError, ValueError) as err:
             _LOGGER.warning("Failed to check liked tracks: %s", err, exc_info=True)
             # Mark all tracks in batch as not liked on error
             for track_id in batch:
-                result[track_id] = False
+                liked_status[track_id] = False
 
-    return result
+    # Enrich items with liked status
+    for item in items:
+        if item.get("type") == MediaType.TRACK and (track_id := item.get("id")):
+            # Add is_saved field to existing item
+            item["is_saved"] = liked_status.get(track_id, False)
+
+    return items
 
 
 async def search_tracks(
@@ -90,7 +89,7 @@ async def search_tracks(
         limit: Maximum number of results to return
 
     Returns:
-        List of ItemPayload objects with is_liked field populated
+        List of ItemPayload objects with is_saved field populated
     """
     # Prepare API request following spotifyaio patterns
     url = URL.build(
@@ -146,24 +145,14 @@ async def search_tracks(
                 data = json.loads(text)
                 tracks_data = data.get("tracks", {}).get("items", [])
 
-                # Collect track IDs for batch liked status check
-                track_ids_to_check: list[str] = []
-                tracks_by_id: dict[str, dict[str, Any]] = {}
+                # Build ItemPayload objects with album images
+                items: list[ItemPayload] = []
                 for track_data in tracks_data:
                     if not track_data:
                         continue
                     track_id = track_data.get("id")
-                    if track_id:
-                        track_ids_to_check.append(track_id)
-                        tracks_by_id[track_id] = track_data
-
-                # Batch check which tracks are liked (more efficient than individual checks)
-                liked_status = await check_tracks_liked(spotify, track_ids_to_check)
-
-                # Build ItemPayload objects with liked status and album images
-                items: list[ItemPayload] = []
-                for track_id in track_ids_to_check:
-                    track_data = tracks_by_id[track_id]
+                    if not track_id:
+                        continue
 
                     # Extract album image (middle size)
                     img_url = None
@@ -178,11 +167,11 @@ async def search_tracks(
                             type=MediaType.TRACK,
                             uri=track_data["uri"],
                             thumbnail=img_url,
-                            is_liked=liked_status.get(track_id, False),
                         )
                     )
 
-                return items
+                # Enrich items with liked status
+                return await enrich_tracks_liked(spotify, items)
 
     except TimeoutError as err:
         msg = "Timeout occurred while searching tracks"

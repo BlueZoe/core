@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 import logging
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs
 
 from spotifyaio import (
@@ -28,24 +28,14 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN, MEDIA_PLAYER_PREFIX, MEDIA_TYPE_SHOW, PLAYABLE_MEDIA_TYPES
-from .media_helper import handle_liked_songs_action, search_tracks
+from .media_helper import enrich_tracks_liked, handle_liked_songs_action, search_tracks
+from .models import ItemPayload
 from .util import fetch_image_url
 
 BROWSE_LIMIT = 48
 
 
 _LOGGER = logging.getLogger(__name__)
-
-
-class ItemPayload(TypedDict, total=False):
-    """TypedDict for item payload."""
-
-    name: str
-    type: str
-    uri: str
-    id: str | None
-    thumbnail: str | None
-    is_liked: bool  # Optional field indicating if track is in user's liked songs
 
 
 def _get_artist_item_payload(artist: Artist) -> ItemPayload:
@@ -362,6 +352,9 @@ async def build_item_response(  # noqa: C901
                 _get_track_item_payload(saved_track.track)
                 for saved_track in saved_tracks
             ]
+            # All tracks in saved tracks are saved by definition
+            for item in items:
+                item["is_saved"] = True
     elif media_content_type == BrowsableMedia.CURRENT_USER_SAVED_SHOWS:
         if saved_shows := await spotify.get_saved_shows():
             items = [
@@ -385,6 +378,7 @@ async def build_item_response(  # noqa: C901
     elif media_content_type == BrowsableMedia.CURRENT_USER_TOP_TRACKS:
         if top_tracks := await spotify.get_top_tracks():
             items = [_get_track_item_payload(track) for track in top_tracks]
+        items = await enrich_tracks_liked(spotify, items)
     elif media_content_type == BrowsableMedia.NEW_RELEASES:
         if new_releases := await spotify.get_new_releases():
             items = [_get_album_item_payload(album) for album in new_releases]
@@ -433,6 +427,8 @@ async def build_item_response(  # noqa: C901
                     if TYPE_CHECKING:
                         assert isinstance(playlist_item.track, Episode)
                     items.append(_get_episode_item_payload(playlist_item.track))
+            # Enrich tracks with liked status
+            items = await enrich_tracks_liked(spotify, items)
     elif media_content_type == MediaType.ALBUM:
         if album := await spotify.get_album(media_content_id):
             title = album.name
@@ -441,6 +437,8 @@ async def build_item_response(  # noqa: C901
                 _get_track_item_payload(track, show_thumbnails=False)
                 for track in album.tracks
             ]
+            # Enrich tracks with liked status
+            items = await enrich_tracks_liked(spotify, items)
     elif media_content_type == MediaType.ARTIST:
         if (artist_albums := await spotify.get_artist_albums(media_content_id)) and (
             artist := await spotify.get_artist(media_content_id)
@@ -498,22 +496,6 @@ async def build_item_response(  # noqa: C901
     return browse_media
 
 
-class TracksInSearch(BrowseMedia):
-    """BrowseMedia subclass that includes is_liked field."""
-
-    def __init__(self, is_liked: bool | None = None, **kwargs: Any) -> None:
-        """Initialize browse media item with optional is_liked field."""
-        super().__init__(**kwargs)
-        self.is_liked = is_liked
-
-    def as_dict(self, *, parent: bool = True) -> dict[str, Any]:
-        """Convert Media class to browse media dictionary including is_liked."""
-        result = super().as_dict(parent=parent)
-        if self.is_liked is not None:
-            result["is_liked"] = self.is_liked
-        return result
-
-
 def item_payload(item: ItemPayload, *, can_play_artist: bool) -> BrowseMedia:
     """Create response payload for a single media item.
 
@@ -537,23 +519,9 @@ def item_payload(item: ItemPayload, *, can_play_artist: bool) -> BrowseMedia:
         media_type != MediaType.ARTIST or can_play_artist
     )
 
-    is_liked = item.get("is_liked") if "is_liked" in item else None
+    is_saved = item.get("is_saved") if "is_saved" in item else None
 
-    # Only use TracksInSearch for tracks that have is_liked field (from search)
-    if media_type == MediaType.TRACK and is_liked is not None:
-        return TracksInSearch(
-            can_expand=can_expand,
-            can_play=can_play,
-            children_media_class=media_class["children"],
-            media_class=media_class["parent"],
-            media_content_id=media_id,
-            media_content_type=f"{MEDIA_PLAYER_PREFIX}{media_type}",
-            title=item["name"],
-            thumbnail=item["thumbnail"],
-            is_liked=is_liked,
-        )
-
-    # Use regular BrowseMedia for all other items
+    # Use BrowseMedia for all items, including is_saved when available
     return BrowseMedia(
         can_expand=can_expand,
         can_play=can_play,
@@ -563,6 +531,7 @@ def item_payload(item: ItemPayload, *, can_play_artist: bool) -> BrowseMedia:
         media_content_type=f"{MEDIA_PLAYER_PREFIX}{media_type}",
         title=item["name"],
         thumbnail=item["thumbnail"],
+        is_saved=is_saved,
     )
 
 
