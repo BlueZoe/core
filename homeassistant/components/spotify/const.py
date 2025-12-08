@@ -19,6 +19,8 @@ SPOTIFY_SCOPES = [
     "playlist-read-private",
     "playlist-read-collaborative",
     "user-library-read",
+    # Needed to add/remove tracks from liked songs
+    "user-library-modify",
     "user-top-read",
     "user-read-playback-position",
     "user-read-recently-played",
