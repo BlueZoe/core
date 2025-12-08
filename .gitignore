@@ -160,3 +160,4 @@ sonarqube_results/focused_issues_20251022_154040.json
 tests/components/spotify/test_track_search.py
 homeassistant/components/spotify/search_demo.py
 .devcontainer/devcontainer.json
+.devcontainer/devcontainer.json

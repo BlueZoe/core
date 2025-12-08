@@ -28,7 +28,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN, MEDIA_PLAYER_PREFIX, MEDIA_TYPE_SHOW, PLAYABLE_MEDIA_TYPES
-from .track_search import search_tracks_with_images
+from .media_helper import handle_liked_songs_action, search_tracks
 from .util import fetch_image_url
 
 BROWSE_LIMIT = 48
@@ -37,7 +37,7 @@ BROWSE_LIMIT = 48
 _LOGGER = logging.getLogger(__name__)
 
 
-class ItemPayload(TypedDict):
+class ItemPayload(TypedDict, total=False):
     """TypedDict for item payload."""
 
     name: str
@@ -45,6 +45,7 @@ class ItemPayload(TypedDict):
     uri: str
     id: str | None
     thumbnail: str | None
+    is_liked: bool  # Optional field indicating if track is in user's liked songs
 
 
 def _get_artist_item_payload(artist: Artist) -> ItemPayload:
@@ -116,6 +117,7 @@ class BrowsableMedia(StrEnum):
     CURRENT_USER_TOP_TRACKS = "current_user_top_tracks"
     NEW_RELEASES = "new_releases"
     SEARCH = "search"
+    LIKED_SONGS_ACTION = "liked_songs_action"
 
 
 LIBRARY_MAP = {
@@ -175,10 +177,6 @@ CONTENT_TYPE_MEDIA_CLASS: dict[str, Any] = {
     MediaType.PLAYLIST: {
         "parent": MediaClass.PLAYLIST,
         "children": MediaClass.TRACK,
-    },
-    BrowsableMedia.SEARCH.value: {
-        "parent": MediaClass.SEARCH,
-        "children": MediaClass.SEARCH,
     },
     MediaType.ALBUM: {"parent": MediaClass.ALBUM, "children": MediaClass.TRACK},
     MediaType.ARTIST: {"parent": MediaClass.ARTIST, "children": MediaClass.ALBUM},
@@ -288,9 +286,28 @@ async def async_browse_media_internal(
     if media_content_type in (None, f"{MEDIA_PLAYER_PREFIX}library"):
         return await library_payload(can_play_artist=can_play_artist)
 
-    # Strip prefix
+    # Strip prefix (handle both "spotify://" and "spotify:" formats)
     if media_content_type:
         media_content_type = media_content_type.removeprefix(MEDIA_PLAYER_PREFIX)
+        # Also handle "spotify:" format (single colon)
+        if media_content_type.startswith("spotify:"):
+            media_content_type = media_content_type.removeprefix("spotify:")
+
+    # Extract query params from media_content_id if not already provided
+    if query_params is None and media_content_id and "?" in media_content_id:
+        try:
+            base_id, query_str = media_content_id.split("?", 1)
+            parsed = parse_qs(query_str)
+            query_params = {k: v[0] if len(v) == 1 else v for k, v in parsed.items()}
+            media_content_id = base_id
+        except (ValueError, IndexError) as err:
+            _LOGGER.warning(
+                "Failed to parse query params from media_content_id: %s", err
+            )
+            query_params = {}
+
+    if query_params is None:
+        query_params = {}
 
     payload = {
         "media_content_type": media_content_type,
@@ -390,7 +407,7 @@ async def build_item_response(  # noqa: C901
             if search_type == "track":
                 # Use single API call search that includes album images
                 # Returns ItemPayload objects directly, no conversion needed
-                items = await search_tracks_with_images(spotify, q, limit=BROWSE_LIMIT)
+                items = await search_tracks(spotify, q, limit=BROWSE_LIMIT)
             else:
                 # For other types, use spotifyaio search
                 results = await spotify.search(q, [search_type], limit=BROWSE_LIMIT)
@@ -401,7 +418,8 @@ async def build_item_response(  # noqa: C901
                         _get_playlist_item_payload(playlist)
                         for playlist in results.playlists
                     ]
-
+    elif media_content_type == BrowsableMedia.LIKED_SONGS_ACTION:
+        return await handle_liked_songs_action(spotify, media_content_id, query_params)
     elif media_content_type == MediaType.PLAYLIST:
         if playlist := await spotify.get_playlist(media_content_id):
             title = playlist.name
@@ -447,9 +465,13 @@ async def build_item_response(  # noqa: C901
     if title is None:
         title = LIBRARY_MAP.get(media_content_id, "Unknown")
 
-    can_play = media_content_type in PLAYABLE_MEDIA_TYPES and (
-        media_content_type != MediaType.ARTIST or can_play_artist
-    )
+    # Search is not playable - only its children (tracks) are
+    if media_content_type == BrowsableMedia.SEARCH:
+        can_play = False
+    else:
+        can_play = media_content_type in PLAYABLE_MEDIA_TYPES and (
+            media_content_type != MediaType.ARTIST or can_play_artist
+        )
 
     if TYPE_CHECKING:
         assert title
@@ -476,6 +498,22 @@ async def build_item_response(  # noqa: C901
     return browse_media
 
 
+class TracksInSearch(BrowseMedia):
+    """BrowseMedia subclass that includes is_liked field."""
+
+    def __init__(self, is_liked: bool | None = None, **kwargs: Any) -> None:
+        """Initialize browse media item with optional is_liked field."""
+        super().__init__(**kwargs)
+        self.is_liked = is_liked
+
+    def as_dict(self, *, parent: bool = True) -> dict[str, Any]:
+        """Convert Media class to browse media dictionary including is_liked."""
+        result = super().as_dict(parent=parent)
+        if self.is_liked is not None:
+            result["is_liked"] = self.is_liked
+        return result
+
+
 def item_payload(item: ItemPayload, *, can_play_artist: bool) -> BrowseMedia:
     """Create response payload for a single media item.
 
@@ -499,6 +537,23 @@ def item_payload(item: ItemPayload, *, can_play_artist: bool) -> BrowseMedia:
         media_type != MediaType.ARTIST or can_play_artist
     )
 
+    is_liked = item.get("is_liked") if "is_liked" in item else None
+
+    # Only use TracksInSearch for tracks that have is_liked field (from search)
+    if media_type == MediaType.TRACK and is_liked is not None:
+        return TracksInSearch(
+            can_expand=can_expand,
+            can_play=can_play,
+            children_media_class=media_class["children"],
+            media_class=media_class["parent"],
+            media_content_id=media_id,
+            media_content_type=f"{MEDIA_PLAYER_PREFIX}{media_type}",
+            title=item["name"],
+            thumbnail=item["thumbnail"],
+            is_liked=is_liked,
+        )
+
+    # Use regular BrowseMedia for all other items
     return BrowseMedia(
         can_expand=can_expand,
         can_play=can_play,
