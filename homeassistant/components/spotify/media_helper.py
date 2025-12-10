@@ -235,6 +235,7 @@ async def search_artists(
 
                 data = json.loads(text)
                 artists_data = data.get("artists", {}).get("items", [])
+
                 items: list[ItemPayload] = []
                 for artist_data in artists_data:
                     if not artist_data:
@@ -243,13 +244,19 @@ async def search_artists(
                     if not artist_id:
                         continue
 
+                    image_url = (
+                        artist_data["images"][0]["url"]
+                        if len(artist_data["images"]) > 0
+                        else None
+                    )
+
                     items.append(
                         ItemPayload(
                             id=artist_id,
                             name=artist_data["name"],
                             type=MediaType.ARTIST,
                             uri=artist_data["uri"],
-                            thumbnail=artist_data["images"][0]["url"],
+                            thumbnail=image_url,
                         )
                     )
 

@@ -377,6 +377,7 @@ async def build_item_response(  # noqa: C901
             items = [
                 _get_track_item_payload(item.track) for item in recently_played_tracks
             ]
+            items = await enrich_tracks_liked(spotify, items)
     elif media_content_type == BrowsableMedia.CURRENT_USER_TOP_ARTISTS:
         if top_artists := await spotify.get_top_artists():
             items = [_get_artist_item_payload(artist) for artist in top_artists]
