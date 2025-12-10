@@ -32,7 +32,7 @@
     'platform': 'spotify',
     'previous_unique_id': None,
     'suggested_object_id': None,
-    'supported_features': <MediaPlayerEntityFeature: 444983>,
+    'supported_features': <MediaPlayerEntityFeature: 4639287>,
     'translation_key': 'spotify',
     'unique_id': '1112264111',
     'unit_of_measurement': None,
@@ -59,7 +59,7 @@
       'source_list': list([
         'DESKTOP-BKC5SIK',
       ]),
-      'supported_features': <MediaPlayerEntityFeature: 444983>,
+      'supported_features': <MediaPlayerEntityFeature: 4639287>,
       'volume_level': 0.25,
     }),
     'context': <ANY>,

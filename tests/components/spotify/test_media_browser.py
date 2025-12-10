@@ -129,6 +129,9 @@ async def test_browsing(
     media_content_id: str,
 ) -> None:
     """Test browsing playlists for the two config entries."""
+
+    mock_spotify.return_value.are_tracks_saved.return_value = {}
+
     await setup_integration(hass, mock_config_entry)
     response = await async_browse_media(
         hass,
