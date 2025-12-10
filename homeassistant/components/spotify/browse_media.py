@@ -403,13 +403,12 @@ async def build_item_response(  # noqa: C901
         search_type = query_params.get("type", "track")
 
         if q:
-            # spoti
+            # spotifyaio search result does not include track and artist images
+            # so we need to use the search_tracks and search_artists functions that use the API to get the images
             if search_type == "track":
-                # Use single API call search that includes album images
                 # Returns ItemPayload objects directly, no conversion needed
                 items = await search_tracks(spotify, q, limit=BROWSE_LIMIT)
             elif search_type == "artist":
-                # Use single API call search that includes artist image
                 items = await search_artists(spotify, q, limit=BROWSE_LIMIT)
             else:
                 # For other types, use spotifyaio search
