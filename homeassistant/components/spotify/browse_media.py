@@ -28,7 +28,12 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN, MEDIA_PLAYER_PREFIX, MEDIA_TYPE_SHOW, PLAYABLE_MEDIA_TYPES
-from .media_helper import enrich_tracks_liked, handle_liked_songs_action, search_tracks
+from .media_helper import (
+    enrich_tracks_liked,
+    handle_liked_songs_action,
+    search_artists,
+    search_tracks,
+)
 from .models import ItemPayload
 from .util import fetch_image_url
 
@@ -398,10 +403,13 @@ async def build_item_response(  # noqa: C901
         search_type = query_params.get("type", "track")
 
         if q:
+            # spotifyaio search result does not include track and artist images
+            # so we need to use the search_tracks and search_artists functions that use the API to get the images
             if search_type == "track":
-                # Use single API call search that includes album images
                 # Returns ItemPayload objects directly, no conversion needed
                 items = await search_tracks(spotify, q, limit=BROWSE_LIMIT)
+            elif search_type == "artist":
+                items = await search_artists(spotify, q, limit=BROWSE_LIMIT)
             else:
                 # For other types, use spotifyaio search
                 results = await spotify.search(q, [search_type], limit=BROWSE_LIMIT)
@@ -412,6 +420,7 @@ async def build_item_response(  # noqa: C901
                         _get_playlist_item_payload(playlist)
                         for playlist in results.playlists
                     ]
+
     elif media_content_type == BrowsableMedia.LIKED_SONGS_ACTION:
         return await handle_liked_songs_action(spotify, media_content_id, query_params)
     elif media_content_type == MediaType.PLAYLIST:

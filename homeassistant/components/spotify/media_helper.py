@@ -181,6 +181,88 @@ async def search_tracks(
         return []
 
 
+async def search_artists(
+    spotify: SpotifyClient,
+    query: str,
+    limit: int = 48,
+) -> list[ItemPayload]:
+    """Search for artists and artist images."""
+    # Prepare API request following spotifyaio patterns
+    url = URL.build(
+        scheme="https",
+        host=spotify.api_host,
+        port=443,
+    ).joinpath("v1/search")
+
+    await spotify.refresh_token()
+    token = getattr(spotify, "_token", None)
+    if not token:
+        _LOGGER.debug("No authentication token available")
+        return []
+
+    headers = {
+        "Accept": "application/json, text/plain, */*",
+        "Authorization": f"Bearer {token}",
+    }
+
+    search_params: dict[str, str | int] = {
+        "q": query,
+        "type": "artist",
+        "limit": limit,
+    }
+
+    try:
+        async with asyncio.timeout(spotify.request_timeout):
+            async with spotify.session.get(
+                url,
+                headers=headers,
+                params=search_params,
+            ) as resp:
+                if resp.status == 204:
+                    return []
+
+                if resp.status != 200:
+                    _LOGGER.warning(
+                        "Failed to search artists with images: HTTP %s", resp.status
+                    )
+                    return []
+
+                text = await resp.text()
+
+                if '"status": 404' in text:
+                    _LOGGER.debug("Search returned 404")
+                    return []
+
+                data = json.loads(text)
+                artists_data = data.get("artists", {}).get("items", [])
+                items: list[ItemPayload] = []
+                for artist_data in artists_data:
+                    if not artist_data:
+                        continue
+                    artist_id = artist_data.get("id")
+                    if not artist_id:
+                        continue
+
+                    items.append(
+                        ItemPayload(
+                            id=artist_id,
+                            name=artist_data["name"],
+                            type=MediaType.ARTIST,
+                            uri=artist_data["uri"],
+                            thumbnail=artist_data["images"][0]["url"],
+                        )
+                    )
+
+                return items
+
+    except TimeoutError as err:
+        msg = "Timeout occurred while searching artists"
+        raise SpotifyConnectionError(msg) from err
+    except (aiohttp.ClientError, KeyError, ValueError, json.JSONDecodeError) as err:
+        _LOGGER.warning("Error searching artists with images: %s", err, exc_info=True)
+        return []
+
+
 async def handle_liked_songs_action(
     spotify: SpotifyClient,
     media_content_id: str,
