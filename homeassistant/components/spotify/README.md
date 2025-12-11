@@ -28,7 +28,12 @@ Search results now follow the same structure and rendering logic as browse views
 - Display of album images and saved-track status
 - A predictable, unified experience across browse and search interfaces
 
-This enhances the clarity and usability of Spotify search within Home Assistant.
+This enhances the clarity and usability of Spotify search within Home Assistant. The new functional features includes:
+- Ability to search across Spotify content types (tracks, artists, albums, playlists)
+- Type-filtered search tabs for quick scoping (Songs / Artists / Albums / Playlist)
+- Graceful handling of empty results and transient Spotify API errors
+
+
 
 ## Usage Notes
 
